@@ -15,6 +15,8 @@
  */
 package io.spring.batch.configuration;
 
+import javax.batch.api.chunk.listener.ChunkListener;
+
 import org.springframework.batch.core.annotation.AfterChunk;
 import org.springframework.batch.core.annotation.BeforeChunk;
 import org.springframework.batch.core.scope.context.ChunkContext;
@@ -22,15 +24,27 @@ import org.springframework.batch.core.scope.context.ChunkContext;
 /**
  * @author Michael Minella
  */
-public class ChunkListener {
+public class MyChunkListener implements ChunkListener {
 
-	@BeforeChunk
-	public void beforeChunk(ChunkContext context) {
-		System.out.println(">> Before the chunk");
-	}
 
-	@AfterChunk
-	public void afterChunk(ChunkContext context) {
-		System.out.println("<< After the chunk");
-	}
+    @Override
+    public void beforeChunk() throws Exception {
+
+        System.out.println(">> Before the chunk");
+        
+    }
+
+    @Override
+    public void onError(Exception ex) throws Exception {
+
+        System.out.println("On Error");
+        
+    }
+
+    @Override
+    public void afterChunk() throws Exception {
+
+        System.out.println("<< After the chunk");
+        
+    }
 }

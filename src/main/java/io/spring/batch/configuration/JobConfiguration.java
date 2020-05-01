@@ -23,6 +23,7 @@ import javax.sql.DataSource;
 import org.apache.commons.lang3.builder.ReflectionToStringBuilder;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
+import org.springframework.batch.core.StepExecutionListener;
 import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
 import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
 import org.springframework.batch.core.configuration.annotation.StepScope;
@@ -30,19 +31,20 @@ import org.springframework.batch.item.database.BeanPropertyItemSqlParameterSourc
 import org.springframework.batch.item.database.JdbcBatchItemWriter;
 import org.springframework.batch.item.database.JdbcPagingItemReader;
 import org.springframework.batch.item.database.Order;
-import org.springframework.batch.item.database.support.MySqlPagingQueryProvider;
 import org.springframework.batch.item.database.support.PostgresPagingQueryProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.task.SimpleAsyncTaskExecutor;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
+import io.spring.batch.domain.Alerts;
 import io.spring.batch.domain.ColumnRangePartitioner;
-import io.spring.batch.domain.Customer;
 import io.spring.batch.domain.CustomerRowMapper;
+import io.spring.batch.domain.ScheduledAlerts;
 
 /**
  * @author Michael Minella
@@ -50,110 +52,123 @@ import io.spring.batch.domain.CustomerRowMapper;
 @Configuration
 public class JobConfiguration {
 
-	@Autowired
-	public JobBuilderFactory jobBuilderFactory;
+    @Autowired
+    public JobBuilderFactory jobBuilderFactory;
 
-	@Autowired
-	public StepBuilderFactory stepBuilderFactory;
+    @Autowired
+    public StepBuilderFactory stepBuilderFactory;
 
-	@Autowired
-	//@Qualifier("medDataSource")
-	public DataSource barDataSource;
-	
-	private int appender=3;
+    @Autowired
+    public DataSource primaryDataSource;
 
-	@Bean
-	public ColumnRangePartitioner partitioner() {
-		ColumnRangePartitioner columnRangePartitioner = new ColumnRangePartitioner();
-		
-		columnRangePartitioner.setColumn("id");
-		columnRangePartitioner.setDataSource(this.barDataSource);
-		columnRangePartitioner.setTable("customer");
+    @Autowired
+    @Qualifier("medDataSource")
+    public DataSource medDataSource;
 
-		return columnRangePartitioner;
-	}
+    private static final int GRID_SIZE = 4;
+    
+    private int appender = 7;
 
-	@Bean
-	@StepScope
-	public JdbcPagingItemReader<Customer> pagingItemReader(
-			@Value("#{stepExecutionContext['minValue']}")Long minValue,
-			@Value("#{stepExecutionContext['maxValue']}")Long maxValue) {
-		System.out.println("reading " + minValue + " to " + maxValue+" Thread: "+ Thread.currentThread().getName());
-		
-		
-		
-		JdbcPagingItemReader<Customer> reader = new JdbcPagingItemReader<>();
+    @Bean
+    public ColumnRangePartitioner partitioner() {
 
-		reader.setDataSource(this.barDataSource);
-		reader.setFetchSize(1000);
-		reader.setRowMapper(new CustomerRowMapper());
+        ColumnRangePartitioner columnRangePartitioner = new ColumnRangePartitioner();
 
-		PostgresPagingQueryProvider queryProvider = new PostgresPagingQueryProvider();
-		queryProvider.setSelectClause("id, firstName, lastName, birthdate");
-		queryProvider.setFromClause("from customer");
-		queryProvider.setWhereClause("where id >= " + minValue + " and id <= " + maxValue);
+        columnRangePartitioner.setColumn("id");
+        columnRangePartitioner.setDataSource(this.medDataSource);
+        columnRangePartitioner.setTable("scheduledalerts");
 
-		Map<String, Order> sortKeys = new HashMap<>(1);
+        return columnRangePartitioner;
+    }
 
-		sortKeys.put("id", Order.ASCENDING);
+    @Bean
+    @StepScope
+    public JdbcPagingItemReader<ScheduledAlerts> pagingItemReader(@Value("#{stepExecutionContext['minValue']}") Long minValue, @Value("#{stepExecutionContext['maxValue']}") Long maxValue) {
 
-		queryProvider.setSortKeys(sortKeys);
+        System.out.println("reading " + minValue + " to " + maxValue + " Thread: " + Thread.currentThread().getName());
 
-		reader.setQueryProvider(queryProvider);
+        JdbcPagingItemReader<ScheduledAlerts> reader = new JdbcPagingItemReader<>();
 
-		return reader;
-	}
+        reader.setDataSource(this.medDataSource);
+        reader.setFetchSize(1000);
+        reader.setRowMapper(new CustomerRowMapper());
 
-	@Bean
-	@StepScope
-	public JdbcBatchItemWriter<Customer> customerItemWriter() {
-	    System.out.println("writer Thread: "+ Thread.currentThread().getName());
-		JdbcBatchItemWriter<Customer> itemWriter = new JdbcBatchItemWriter<>();
+        PostgresPagingQueryProvider queryProvider = new PostgresPagingQueryProvider();
+        queryProvider.setSelectClause("id, title, description");
+        queryProvider.setFromClause("from scheduledalerts");
+        queryProvider.setWhereClause(
+                "where time <= CURRENT_TIMESTAMP and isscheduled=false and isactive = true and " + "id >= " + minValue + " and id <= " + maxValue);
 
-		itemWriter.setDataSource(this.barDataSource);
-		itemWriter.setSql("INSERT INTO NEW_CUSTOMER VALUES (:id, :firstName, :lastName, :birthdate)");
-		itemWriter.setItemSqlParameterSourceProvider(new BeanPropertyItemSqlParameterSourceProvider());
-		itemWriter.afterPropertiesSet();
+        Map<String, Order> sortKeys = new HashMap<>(1);
 
-		return itemWriter;
-	}
+        sortKeys.put("id", Order.ASCENDING);
 
-	
-	@Bean
-	public TaskExecutor taskExecutor(){
-	    ThreadPoolTaskExecutor taskExecutor=   new ThreadPoolTaskExecutor();
-	    taskExecutor.setMaxPoolSize(4);
-	    taskExecutor.setCorePoolSize(2);
-	    taskExecutor.afterPropertiesSet();
-	    return taskExecutor;
-	}
-	
-	@Bean
-	public Step step1() throws Exception {
-	    
-	    
-		return stepBuilderFactory.get("step1"+appender)
-				.partitioner(slaveStep().getName(), partitioner())
-				.step(slaveStep())
-				.gridSize(10)
-				.taskExecutor(taskExecutor())
-				.build();
-	}
+        queryProvider.setSortKeys(sortKeys);
 
-	@Bean
-	public Step slaveStep() {
-		return stepBuilderFactory.get("slaveStep"+appender)
-				.<Customer, Customer>chunk(1000)
-				.reader(pagingItemReader(null, null))
-				.writer(customerItemWriter())
-				.build();
-	}
+        reader.setQueryProvider(queryProvider);
 
-	@Bean
-	public Job job() throws Exception {
-	    System.out.println("jobs-"+ReflectionToStringBuilder.toString(this.barDataSource));
-		return jobBuilderFactory.get("job"+appender)
-				.start(step1())
-				.build();
-	}
+        return reader;
+    }
+
+    @Bean
+    @StepScope
+    public JdbcBatchItemWriter<Alerts> customerItemWriter() {
+
+        System.out.println("writer Thread: " + Thread.currentThread().getName());
+        JdbcBatchItemWriter<Alerts> itemWriter = new JdbcBatchItemWriter<>();
+        
+        itemWriter.setDataSource(this.medDataSource);
+        itemWriter.setSql("INSERT INTO public.alerts(" + 
+                "     type, title, description, comment, \"time\", status, patientid, caremanagerid, createdby, creationdate, updatedby, updationdate, isactive, alertfor, repeat, category, elementids, scheduledtime, isfollowupquestion, followupsince, isspecial, subtype, scheduledalertsid, parentid, multiplepatientid, priority)" + 
+                "    VALUES ( 1, :title, :description, 'comment', current_timestamp, 60, null, null, null, null, null, null, true, null, null, null, null, null, false, null, null, null, null, :id, null, null)");
+        itemWriter.setItemSqlParameterSourceProvider(new BeanPropertyItemSqlParameterSourceProvider());
+        itemWriter.afterPropertiesSet();
+
+        return itemWriter;
+    }
+
+    @Bean
+    public TaskExecutor poolTaskExecutor() {
+
+        ThreadPoolTaskExecutor taskExecutor = new ThreadPoolTaskExecutor();
+        taskExecutor.setMaxPoolSize(4);
+        // taskExecutor.setCorePoolSize(2);
+        taskExecutor.setKeepAliveSeconds(5);
+        taskExecutor.setAllowCoreThreadTimeOut(true);
+        taskExecutor.afterPropertiesSet();
+        return taskExecutor;
+    }
+
+    @Bean
+    public TaskExecutor taskExecutor() {
+
+        return new SimpleAsyncTaskExecutor();
+    }
+
+    @Bean
+    public Step step1() throws Exception {
+
+        return stepBuilderFactory.get("step1" + appender).partitioner(slaveStep().getName(), partitioner()).step(slaveStep()).gridSize(GRID_SIZE)
+                .taskExecutor(taskExecutor()).listener(chunkListener()).build();
+    }
+
+    @Bean
+    public MyChunkListener chunkListener(){
+        return new MyChunkListener();
+    }
+
+    @Bean
+    public Step slaveStep() {
+
+        return stepBuilderFactory.get("slaveStep" + appender).<ScheduledAlerts, Alerts>chunk(1000).reader(pagingItemReader(null, null))
+                .writer(customerItemWriter()).build();
+    }
+
+    @Bean
+    public Job job() throws Exception {
+
+        System.out.println("primaryDataSource-" + ReflectionToStringBuilder.toString(this.primaryDataSource));
+        System.out.println("medDataSource-" + ReflectionToStringBuilder.toString(medDataSource));
+        return jobBuilderFactory.get("job" + appender).start(step1()).build();
+    }
 }

@@ -23,12 +23,11 @@ import org.springframework.jdbc.core.RowMapper;
 /**
  * @author Michael Minella
  */
-public class CustomerRowMapper implements RowMapper<Customer> {
+public class CustomerRowMapper implements RowMapper<ScheduledAlerts> {
 	@Override
-	public Customer mapRow(ResultSet resultSet, int i) throws SQLException {
-		return new Customer(resultSet.getLong("id"),
-				resultSet.getString("firstName"),
-				resultSet.getString("lastName"),
-				resultSet.getDate("birthdate"));
+	public ScheduledAlerts mapRow(ResultSet resultSet, int i) throws SQLException {
+		return new ScheduledAlerts(resultSet.getLong("id"),
+				resultSet.getString("title"),
+				resultSet.getString("description"));
 	}
 }

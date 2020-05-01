@@ -16,7 +16,7 @@ public class BatchConfiguration {
 
     @Bean
     @Primary
-    @ConfigurationProperties("spring.datasource")
+    @ConfigurationProperties("app.datasource")
     public DataSourceProperties fooDataSourceProperties() {
 
         return new DataSourceProperties();
@@ -24,17 +24,16 @@ public class BatchConfiguration {
 
     @Bean
     @Primary
-    @ConfigurationProperties("spring.datasource.configuration")
+    @ConfigurationProperties("app.datasource.configuration")
     public DataSource fooDataSource() {
 
         DataSource ds = fooDataSourceProperties().initializeDataSourceBuilder().type(HikariDataSource.class).build();
-        System.out.println("primary-"+ReflectionToStringBuilder.toString(ds));
         return ds; 
     }
 
     @Bean
     @ConfigurationProperties("medsolis.datasource")
-    public DataSourceProperties barDataSourceProperties() {
+    public DataSourceProperties medDataSourceProperties() {
 
         DataSourceProperties props = new DataSourceProperties();
         return props;
@@ -42,12 +41,10 @@ public class BatchConfiguration {
 
     @Bean(name = "medDataSource")
     @ConfigurationProperties("medsolis.datasource.configuration")
-    public DataSource barDataSource() {
+    public DataSource medDataSource() {
 
-        DataSourceProperties dsp = barDataSourceProperties();
-        //System.out.println(ReflectionToStringBuilder.toString(dsp));
+        DataSourceProperties dsp = medDataSourceProperties();
         DataSource ds = dsp.initializeDataSourceBuilder().build();
-        System.out.println(ReflectionToStringBuilder.toString(ds));
         return ds;
     }
 }
